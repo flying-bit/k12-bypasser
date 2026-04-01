@@ -1,0 +1,93 @@
+#!/bin/bash
+# ============================================
+#  K12NET BYPASS - USB'YE KOYULACAK DOSYA
+#  USB takılınca otomatik çalışır
+# ============================================
+
+YESIL='\033[0;32m'
+SARI='\033[1;33m'
+MAVI='\033[0;34m'
+SIFIRLA='\033[0m'
+
+LOG="/tmp/k12net_bypass.log"
+echo "$(date) - K12Net Bypass başladı" >> "$LOG"
+
+# ---- ADIM 1: Çalışan k12net işlemini öldür ----
+echo "$(date) - Çalışan işlemler aranıyor..." >> "$LOG"
+for ANAHTAR in k12 k12net knk etap; do
+    PIDLER=$(pgrep -fi "$ANAHTAR" 2>/dev/null)
+    if [ -n "$PIDLER" ]; then
+        echo "$(date) - Öldürülüyor ($ANAHTAR): $PIDLER" >> "$LOG"
+        kill -9 $PIDLER 2>/dev/null
+        sleep 0.5
+    fi
+done
+
+# ---- ADIM 2: Autostart .desktop dosyalarını devre dışı bırak ----
+echo "$(date) - Autostart taranıyor..." >> "$LOG"
+for DIZIN in /etc/xdg/autostart /usr/share/autostart; do
+    if [ -d "$DIZIN" ]; then
+        for DOSYA in "$DIZIN"/*.desktop; do
+            [ -f "$DOSYA" ] || continue
+            DOSYA_ADI_KUCUK=$(basename "$DOSYA" | tr '[:upper:]' '[:lower:]')
+            ICERIK=$(cat "$DOSYA" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+            for ANAHTAR in k12 knk k12net etap; do
+                if echo "$DOSYA_ADI_KUCUK$ICERIK" | grep -q "$ANAHTAR"; then
+                    echo "$(date) - Devre dışı: $DOSYA" >> "$LOG"
+                    # Yedek al
+                    cp "$DOSYA" "${DOSYA}.yedek" 2>/dev/null
+                    # Devre dışı bırak
+                    if grep -q "Hidden=" "$DOSYA"; then
+                        sed -i 's/^Hidden=.*/Hidden=true/' "$DOSYA"
+                    else
+                        echo "Hidden=true" >> "$DOSYA"
+                    fi
+                    if grep -q "X-GNOME-Autostart-enabled=" "$DOSYA"; then
+                        sed -i 's/^X-GNOME-Autostart-enabled=.*/X-GNOME-Autostart-enabled=false/' "$DOSYA"
+                    else
+                        echo "X-GNOME-Autostart-enabled=false" >> "$DOSYA"
+                    fi
+                    break
+                fi
+            done
+        done
+    fi
+done
+
+# Kullanıcı autostart klasörleri
+for EV in /home/*/; do
+    DIZIN="${EV}.config/autostart"
+    if [ -d "$DIZIN" ]; then
+        for DOSYA in "$DIZIN"/*.desktop; do
+            [ -f "$DOSYA" ] || continue
+            DOSYA_ADI_KUCUK=$(basename "$DOSYA" | tr '[:upper:]' '[:lower:]')
+            ICERIK=$(cat "$DOSYA" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+            for ANAHTAR in k12 knk k12net etap; do
+                if echo "$DOSYA_ADI_KUCUK$ICERIK" | grep -q "$ANAHTAR"; then
+                    echo "$(date) - Kullanıcı autostart devre dışı: $DOSYA" >> "$LOG"
+                    cp "$DOSYA" "${DOSYA}.yedek" 2>/dev/null
+                    echo "Hidden=true" >> "$DOSYA"
+                    echo "X-GNOME-Autostart-enabled=false" >> "$DOSYA"
+                    break
+                fi
+            done
+        done
+    fi
+done
+
+# ---- ADIM 3: Systemd servislerini durdur ----
+echo "$(date) - Systemd servisleri kontrol ediliyor..." >> "$LOG"
+for SERVIS in $(systemctl list-unit-files --no-legend 2>/dev/null | awk '{print $1}'); do
+    SERVIS_KUCUK=$(echo "$SERVIS" | tr '[:upper:]' '[:lower:]')
+    for ANAHTAR in k12 knk k12net; do
+        if echo "$SERVIS_KUCUK" | grep -q "$ANAHTAR"; then
+            echo "$(date) - Servis durduruluyor: $SERVIS" >> "$LOG"
+            systemctl stop "$SERVIS" 2>/dev/null
+            systemctl disable "$SERVIS" 2>/dev/null
+            break
+        fi
+    done
+done
+
+echo "$(date) - K12Net Bypass tamamlandı!" >> "$LOG"
+exit 0
